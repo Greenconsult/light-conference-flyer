@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#92003c">
+  <meta name="description" content="Personalise your Light Conference I Will Be Attending flyer with a photo and download it instantly.">
+  <title>I Will Be Attending | The Light Conference</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#3f2030;background:#fff7f8}
+    *{box-sizing:border-box}
+    body{margin:0}
+    header{text-align:center;background:#90003e;color:white;padding:25px 16px 20px}
+    header h1{font-size:clamp(1.5rem,3.8vw,2.3rem);margin:0 0 7px}
+    header p{margin:0;opacity:.92;font-size:.98rem}
+    main{max-width:1060px;margin:28px auto;padding:0 18px 35px;display:grid;grid-template-columns:minmax(0,1fr) minmax(265px,360px);align-items:start;gap:28px}
+    .preview{background:white;border:1px solid #f0d6e0;padding:12px;border-radius:16px;box-shadow:0 8px 28px #4b002012}
+    canvas{display:block;width:100%;height:auto;touch-action:none;border-radius:8px;cursor:grab}
+    canvas.dragging{cursor:grabbing}
+    .hint{color:#70445a;text-align:center;font-size:.84rem;margin:10px 0 0}
+    aside{background:#fff;border:1px solid #f0d6e0;border-radius:16px;padding:23px;box-shadow:0 8px 28px #4b002012}
+    aside h2{font-size:1.25rem;margin:0 0 12px;color:#870037}
+    aside p{line-height:1.5;font-size:.94rem;color:#684253}
+    .upload{display:block;text-align:center;border:2px dashed #b53065;border-radius:13px;padding:22px 12px;margin-top:18px;cursor:pointer;background:#fff8fa;font-weight:700;color:#89003b}
+    .upload:hover,.upload:focus-within{background:#fce8ef}
+    .upload input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+    .upload small{display:block;font-weight:400;color:#674253;margin-top:5px}
+    label.zoom-label{display:flex;justify-content:space-between;font-size:.9rem;font-weight:600;margin:24px 0 9px}
+    input[type=range]{width:100%;accent-color:#9b0045;cursor:pointer}
+    .actions{display:grid;gap:10px;margin-top:24px}
+    button{padding:13px 15px;border-radius:10px;font:inherit;font-weight:700;border:1px solid #90003e;cursor:pointer}
+    button.primary{background:#91003e;color:white}
+    button.primary:hover{background:#71002f}
+    button.secondary{color:#90003e;background:white}
+    button:disabled{opacity:.48;cursor:not-allowed}
+    #status{min-height:1.4em;font-size:.88rem;color:#6c4052}
+    footer{text-align:center;font-size:.82rem;color:#765468;padding:0 12px 25px}
+    @media(max-width:720px){main{grid-template-columns:1fr;max-width:560px;gap:16px;margin:18px auto}aside{order:-1;padding:18px}.preview{padding:8px}}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>I'm Attending The Light Conference!</h1>
+    <p>Add your photo to the official-style flyer and share the excitement.</p>
+  </header>
+  <main>
+    <section class="preview" aria-label="Personalised flyer preview">
+      <canvas id="flyer" width="1122" height="1402" aria-label="Preview of your personalised conference flyer"></canvas>
+      <p class="hint">After uploading: drag your photo on the flyer to reposition it.</p>
+    </section>
+    <aside>
+      <h2>Create your flyer</h2>
+      <p>Choose a photo, adjust its position and size, then download your personalised flyer as a high-quality PNG.</p>
+      <label class="upload" for="photo">📷 Choose your photo<small>JPG, PNG, WEBP or a photo from your phone</small>
+        <input id="photo" type="file" accept="image/*">
+      </label>
+      <label class="zoom-label" for="zoom"><span>Photo zoom</span><span id="zoomValue">100%</span></label>
+      <input id="zoom" type="range" min="1" max="3" step="0.01" value="1" disabled>
+      <div class="actions">
+        <button class="secondary" id="reset" type="button" disabled>Reset photo position</button>
+        <button class="primary" id="download" type="button" disabled>Download my flyer (PNG)</button>
+      </div>
+      <p id="status" role="status" aria-live="polite">Choose a photo to get started.</p>
+      <p><small>Your photo is processed on this device and is never uploaded to a server.</small></p>
+    </aside>
+  </main>
+  <footer>The Light Conference · Arise and Shine · 3rd–5th November</footer>
+  <script>
+    (() => {
+      'use strict';
+      const W = 1122, H = 1402;
+      // Photo opening in the supplied full-circle flyer (original pixel coordinates).
+      const circle = {x: 551, y: 737, r: 240};
+      const canvas = document.getElementById('flyer');
+      const ctx = canvas.getContext('2d');
+      const picker = document.getElementById('photo');
+      const zoomControl = document.getElementById('zoom');
+      const zoomValue = document.getElementById('zoomValue');
+      const resetButton = document.getElementById('reset');
+      const downloadButton = document.getElementById('download');
+      const status = document.getElementById('status');
+      const base = new Image();
+      let photo = null, zoom = 1, offsetX = 0, offsetY = 0;
+      let objectURL = null, pointer = null, baseReady = false;
+
+      function imageSize() {
+        if (!photo) return null;
+        const diameter = 2 * circle.r;
+        const fit = Math.max(diameter / photo.naturalWidth, diameter / photo.naturalHeight);
+        return {width: photo.naturalWidth * fit * zoom, height: photo.naturalHeight * fit * zoom};
+      }
+      function clampOffset() {
+        const size = imageSize();
+        if (!size) return;
+        offsetX = Math.max(-(size.width / 2 - circle.r), Math.min(size.width / 2 - circle.r, offsetX));
+        offsetY = Math.max(-(size.height / 2 - circle.r), Math.min(size.height / 2 - circle.r, offsetY));
+      }
+      function draw() {
+        ctx.clearRect(0, 0, W, H);
+        if (baseReady) ctx.drawImage(base, 0, 0, W, H);
+        if (!photo) return;
+        clampOffset();
+        const size = imageSize();
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(circle.x, circle.y, circle.r, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(photo, circle.x - size.width / 2 + offsetX,
+          circle.y - size.height / 2 + offsetY, size.width, size.height);
+        ctx.restore();
+      }
+      base.onload = () => {baseReady = true; draw();};
+      base.onerror = () => {status.textContent = 'Could not load the flyer background. Make sure the assets folder is uploaded.';};
+      base.src = 'assets/conference-flyer.png';
+
+      picker.addEventListener('change', () => {
+        const file = picker.files && picker.files[0];
+        if (!file) return;
+        if (!file.type.startsWith('image/')) {status.textContent = 'Please choose an image file.';return;}
+        const url = URL.createObjectURL(file);
+        const candidate = new Image();
+        candidate.onload = () => {
+          if (objectURL) URL.revokeObjectURL(objectURL);
+          objectURL = url;
+          photo = candidate;
+          zoom = 1;offsetX = 0;offsetY = 0;
+          zoomControl.value = '1';zoomValue.textContent = '100%';
+          zoomControl.disabled = false;resetButton.disabled = false;downloadButton.disabled = false;
+          status.textContent = 'Photo added! Drag to centre your face, or adjust zoom.';
+          draw();
+        };
+        candidate.onerror = () => {URL.revokeObjectURL(url);status.textContent = 'Could not open this photo. Please try JPG or PNG.';};
+        candidate.src = url;
+      });
+      zoomControl.addEventListener('input', () => {
+        zoom = Number(zoomControl.value);
+        zoomValue.textContent = Math.round(zoom * 100) + '%';
+        draw();
+      });
+      resetButton.addEventListener('click', () => {
+        zoom = 1;offsetX = 0;offsetY = 0;zoomControl.value = '1';zoomValue.textContent = '100%';draw();
+      });
+      canvas.addEventListener('pointerdown', e => {
+        if (!photo) return;
+        const bounds = canvas.getBoundingClientRect();
+        const x = (e.clientX - bounds.left) * W / bounds.width;
+        const y = (e.clientY - bounds.top) * H / bounds.height;
+        if (Math.hypot(x - circle.x, y - circle.y) > circle.r) return;
+        pointer = {id:e.pointerId,x:e.clientX,y:e.clientY};
+        canvas.setPointerCapture(e.pointerId);
+        canvas.classList.add('dragging');
+      });
+      canvas.addEventListener('pointermove', e => {
+        if (!pointer || e.pointerId !== pointer.id) return;
+        const bounds = canvas.getBoundingClientRect();
+        offsetX += (e.clientX - pointer.x) * W / bounds.width;
+        offsetY += (e.clientY - pointer.y) * H / bounds.height;
+        pointer.x = e.clientX;pointer.y = e.clientY;
+        draw();
+      });
+      function endPointer(e){if(pointer && pointer.id === e.pointerId){pointer = null;canvas.classList.remove('dragging');}}
+      canvas.addEventListener('pointerup', endPointer);
+      canvas.addEventListener('pointercancel', endPointer);
+      downloadButton.addEventListener('click', () => {
+        if (!photo || !baseReady) return;
+        draw();
+        canvas.toBlob(blob => {
+          if (!blob){status.textContent = 'Could not export the flyer. Please try again.';return;}
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');a.href=url;a.download='light-conference-i-will-be-attending.png';
+          document.body.appendChild(a);a.click();a.remove();
+          status.textContent = 'Your flyer is ready!';
+          setTimeout(() => URL.revokeObjectURL(url), 30000);
+        }, 'image/png');
+      });
+    })();
+  </script>
+</body>
+</html>
